@@ -8,6 +8,7 @@ export interface Stream {
   type: string
   editable: boolean
   dirty: boolean
+  state: 'active' | 'disabled' | string
   offers: Offer[]
 }
 export interface StreamList { campaign_id: number; streams: Stream[] }

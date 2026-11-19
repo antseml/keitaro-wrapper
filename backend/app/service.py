@@ -29,6 +29,7 @@ def as_stream(row: StreamDraft) -> dict:
         "type": row.type,
         "editable": row.editable,
         "dirty": row.dirty,
+        "state": row.state,
         "offers": [
             {"id": offer.offer_id, "name": offer.name,
              "share": 0 if offer.removed else offer.share,
@@ -62,8 +63,12 @@ def _sync_one(session: Session, remote: dict, names: dict[int, str]):
         raise HTTPException(409, f"Stream {stream_id} has unpublished changes")
     row.name = remote["name"]
     row.type = remote["type"]
+    row.state = remote.get("state", "active")
+    if row.state != "disabled" or _active_remote_offers(remote):
+        row.auto_disabled = False
     row.editable = remote.get("schema") == "landings" and (
-        bool(_active_remote_offers(remote)) or bool(row.offers)
+        bool(_active_remote_offers(remote)) or bool(row.offers) or
+        (remote.get("type") == "default" and not remote.get("landings"))
     )
     row.remote_signature = signature(remote)
     by_id = {o.offer_id: o for o in row.offers}

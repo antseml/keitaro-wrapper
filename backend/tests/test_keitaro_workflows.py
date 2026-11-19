@@ -38,7 +38,7 @@ class FakeKeitaro:
             {"id": 31, "campaign_id": 7, "name": "Google", "type": "forced",
              "schema": "redirect", "offers": []},
             {"id": 32, "campaign_id": 7, "name": "Offers", "type": "default",
-             "schema": "landings", "offers": [
+             "schema": "landings", "state": "active", "offers": [
                  {"offer_id": 101, "share": 50, "state": "active"},
                  {"offer_id": 102, "share": 50, "state": "active"},
              ]},
@@ -91,6 +91,7 @@ class FakeKeitaro:
         self.calls.append(("update_stream", stream_id, deepcopy(body)))
         assert stream_id == 32
         self.remote_streams[1]["offers"] = deepcopy(body["offers"])
+        self.remote_streams[1]["state"] = body["state"]
 
 
 @pytest.fixture
@@ -235,14 +236,60 @@ def test_last_offer_removal_and_pinned_share_after_restore(session):
     published = publish(32, session, client)
     assert published["dirty"] is False
     assert client.remote_streams[1]["offers"] == []
-    assert any(call == ("update_stream", 32, {"offers": []}) for call in client.calls)
+    assert client.remote_streams[1]["state"] == "disabled"
+    assert any(call == ("update_stream", 32, {"state": "disabled", "offers": []}) for call in client.calls)
     assert sync_campaign(session, client, 7, force=True)["streams"][1]["editable"] is True
     restored = restore_offer(32, 101, session, client)
     assert next(offer for offer in restored["offers"] if offer["id"] == 101)["share"] == 100
     publish(32, session, client)
+    assert client.remote_streams[1]["state"] == "active"
     assert client.remote_streams[1]["offers"] == [
         {"offer_id": 101, "share": 100, "state": "active"},
     ]
+
+
+def test_manually_disabled_stream_stays_disabled_when_offers_change(session):
+    client = FakeKeitaro()
+    client.remote_streams[1]["state"] = "disabled"
+    sync_campaign(session, client, 7, force=True)
+    remove_offer(32, 102, session, client)
+    remove_offer(32, 101, session, client)
+    publish(32, session, client)
+    add_offer(32, AddOffer(offer_id=103), session, client)
+    publish(32, session, client)
+    assert client.remote_streams[1]["state"] == "disabled"
+    assert client.remote_streams[1]["offers"] == [
+        {"offer_id": 103, "share": 100, "state": "active"},
+    ]
+
+
+def test_adding_new_offer_reopens_stream_disabled_by_editor(session):
+    client = FakeKeitaro()
+    sync_campaign(session, client, 7, force=True)
+    remove_offer(32, 101, session, client)
+    remove_offer(32, 102, session, client)
+    publish(32, session, client)
+    assert client.remote_streams[1]["state"] == "disabled"
+
+    draft = add_offer(32, AddOffer(offer_id=103), session, client)
+    assert draft["state"] == "disabled"
+    assert client.remote_streams[1]["state"] == "disabled"
+    published = publish(32, session, client)
+    assert published["state"] == "active"
+    assert client.remote_streams[1]["offers"] == [
+        {"offer_id": 103, "share": 100, "state": "active"},
+    ]
+
+
+def test_empty_disabled_default_stream_is_editable_after_cache_reset(session):
+    client = FakeKeitaro()
+    client.remote_streams[1].update(state="disabled", offers=[])
+    streams = sync_campaign(session, client, 7, force=True)["streams"]
+    assert streams[1]["editable"] is True
+    assert streams[1]["state"] == "disabled"
+    add_offer(32, AddOffer(offer_id=103), session, client)
+    publish(32, session, client)
+    assert client.remote_streams[1]["state"] == "disabled"
 
 
 def test_publish_rejects_remote_change_without_overwriting_it(session):
@@ -374,7 +421,7 @@ def test_editor_http_updates_existing_campaign_and_rolls_back_invalid_drafts(api
     assert shares(client.delete(offers_url + "/102")) == {101: 25, 102: 0, 103: 75}
     assert keitaro.calls == []
     assert shares(client.post("/api/streams/32/publish")) == {101: 25, 102: 0, 103: 75}
-    assert keitaro.calls == [("update_stream", 32, {"offers": [
+    assert keitaro.calls == [("update_stream", 32, {"state": "active", "offers": [
         {"offer_id": 101, "share": 25, "state": "active"},
         {"offer_id": 103, "share": 75, "state": "active"},
     ]})]

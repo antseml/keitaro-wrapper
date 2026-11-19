@@ -14,7 +14,7 @@ All endpoints are under `/api`. Errors return `{ "detail": "Description" }` with
 | `DELETE /api/streams/{stream_id}/offers/{offer_id}` | None | Updated draft with removed offer at 0%; the last active offer may also be removed |
 | `POST /api/streams/{stream_id}/offers/{offer_id}/restore` | None | Updated stream draft |
 | `PUT /api/streams/{stream_id}/offers/{offer_id}/pin` | `{ "pinned": true, "share": 25 }` or `{ "pinned": false }` | Updated stream draft; impossible allocations yield 422 |
-| `POST /api/streams/{stream_id}/publish` | None | Publishes active offers to Keitaro, rereads remote values and returns stream; external changes yield 409 |
+| `POST /api/streams/{stream_id}/publish` | None | Publishes active offers; disables the stream if empty, re-enables it when offers return if the editor disabled it; external changes yield 409 |
 | `POST /api/streams/{stream_id}/cancel` | None | Discards unpublished changes and returns stream |
 
 Stream collection example:
@@ -29,6 +29,7 @@ Stream collection example:
       "type": "default",
       "editable": true,
       "dirty": false,
+      "state": "active",
       "offers": [
         { "id": 3749, "name": "Sample offer", "share": 100, "pinned": false, "removed": false }
       ]
@@ -37,6 +38,6 @@ Stream collection example:
 }
 ```
 
-An offer-free stream still appears with `offers: []` and `editable: false` unless it has locally archived offers that can be restored. Shares are integer percentages. Unpinned offers divide the remainder evenly; surplus percentage points are assigned in ascending offer-ID order. A removed offer stays in the local archive at 0%. `dirty` marks changes not yet published to Keitaro. `sync` reconciles externally removed offers to the archive.
+An empty default offer stream remains editable after a sync, including when its local archive is lost. A direct-redirect stream is not editable. Shares are integer percentages. Unpinned offers divide the remainder evenly; surplus percentage points are assigned in ascending offer-ID order. A removed offer stays in the local archive at 0%. `dirty` marks changes not yet published to Keitaro. Publishing an empty offer list disables the stream; adding or restoring offers re-enables it only if this editor disabled it. `sync` reconciles externally removed offers to the archive.
 
 The editor lists and accepts existing Keitaro campaigns. `GET /api/campaigns` uses the current Keitaro campaign domain where available, falls back to a locally stored domain for campaigns created by this application, and can return `url: null` when the domain is unknown. On create, the name is prefixed if needed. Before creating any remote resource, the backend checks `GET /admin_api/v1/streams_actions` for the `http` action key; missing key yields 422 and malformed metadata yields 502.

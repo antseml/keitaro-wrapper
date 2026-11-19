@@ -22,6 +22,8 @@ class StreamDraft(Base):
     type: Mapped[str] = mapped_column(String(30))
     editable: Mapped[bool] = mapped_column(Boolean, default=False)
     dirty: Mapped[bool] = mapped_column(Boolean, default=False)
+    state: Mapped[str] = mapped_column(String(30), default="active")
+    auto_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     remote_signature: Mapped[list] = mapped_column(JSON, default=list)
     offers: Mapped[list["DraftOffer"]] = relationship(
         back_populates="stream", cascade="all, delete-orphan", order_by="DraftOffer.offer_id"

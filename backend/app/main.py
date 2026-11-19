@@ -190,19 +190,23 @@ def publish(stream_id: int, session: Session = Depends(get_session),
         raise HTTPException(409, "The remote stream scheme changed; fetch streams again")
     if signature(remote) != row.remote_signature:
         raise HTTPException(409, "Stream changed in Keitaro; cancel and fetch streams again")
+    if remote.get("state", "active") != row.state:
+        raise HTTPException(409, "Stream state changed in Keitaro; fetch streams again")
     active = [o for o in row.offers if not o.removed]
     if active and sum(o.share for o in active) != 100:
         raise HTTPException(422, "Active offer shares must add up to 100%")
-    client.update_stream(stream_id, {"offers": [
+    desired_state = "disabled" if not active else "active" if row.auto_disabled else row.state
+    client.update_stream(stream_id, {"state": desired_state, "offers": [
         {"offer_id": o.offer_id, "share": o.share, "state": "active"} for o in active
     ]})
     updated = next((s for s in client.streams(row.campaign_id) if int(s["id"]) == stream_id), None)
-    if updated is None or signature(updated) != sorted(
+    if updated is None or updated.get("state", "active") != desired_state or signature(updated) != sorted(
         [{"offer_id": o.offer_id, "share": o.share} for o in active],
         key=lambda value: value["offer_id"],
     ):
         raise HTTPException(502, "Keitaro did not confirm the published shares; fetch streams before retrying")
     row.dirty = False
+    row.auto_disabled = not active and (row.auto_disabled or row.state == "active")
     _sync_one(session, updated, _names(client))
     session.commit()
     return as_stream(row)

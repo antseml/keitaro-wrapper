@@ -101,8 +101,10 @@ small { color: #788592; font-size: 12px; line-height: 18px; }
 .stream-meta { color: #83909d; font: 11px "IBM Plex Mono", Consolas, monospace; }
 .state-dot { width: 8px; height: 8px; flex: none; background: #3a9470; border-radius: 50%; }
 .state-dot.pending { background: #c59130; }
+.state-dot.disabled { background: #83909d; }
 .status { color: #397758; font-size: 12px; }
 .status.pending { color: #946b24; }
+.status.disabled { color: #65717e; }
 .table-scroll { width: 100%; overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; min-width: 670px; text-align: left; }
 th { padding: 12px 8px; border-block: 1px solid #e8edf1; color: #758390; font-size: 12px; font-weight: 500; }

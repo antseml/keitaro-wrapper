@@ -36,7 +36,7 @@ alembic upgrade head
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The default SQLite database is created in `backend/`. To roll back the initial migration, run `alembic downgrade base`. API documentation is at `http://127.0.0.1:8000/docs`; the frontend contract is documented in [`backend/API_CONTRACT.md`](backend/API_CONTRACT.md).
+The default SQLite database is created in `backend/`. On an existing installation, run `alembic upgrade head` before restarting the backend to add stream state tracking. To roll back all migrations, run `alembic downgrade base`. API documentation is at `http://127.0.0.1:8000/docs`; the frontend contract is documented in [`backend/API_CONTRACT.md`](backend/API_CONTRACT.md).
 
 ## Frontend
 

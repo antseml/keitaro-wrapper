@@ -184,11 +184,12 @@ function StreamCard({ stream, action, busy }: {
 }) {
   const [picked, setPicked] = useState<Option | null>(null)
   const excluded = stream.offers.map(offer => offer.id)
+  const willPause = stream.dirty && stream.offers.every(offer => offer.removed)
 
   return <section className={`panel stream ${stream.dirty ? 'stream-dirty' : ''}`} aria-label={stream.name}>
-    <div className="stream-heading"><div className="stream-title"><span className={`state-dot ${stream.dirty ? 'pending' : ''}`} />
+    <div className="stream-heading"><div className="stream-title"><span className={`state-dot ${stream.dirty ? 'pending' : stream.state === 'disabled' ? 'disabled' : ''}`} />
       <div><h2>{stream.name}</h2><span className="stream-meta">ID {stream.id} · {stream.type}</span></div></div>
-      <span className={`status ${stream.dirty ? 'pending' : ''}`}>{stream.dirty ? 'Черновик' : 'В Keitaro'}</span></div>
+      <span className={`status ${stream.dirty ? 'pending' : stream.state === 'disabled' ? 'disabled' : ''}`}>{stream.dirty ? willPause ? 'После отправки поток отключится' : 'Черновик' : stream.state === 'disabled' ? 'Поток отключён' : 'В Keitaro'}</span></div>
     {stream.editable ? <>
       <div className="table-scroll"><table><thead><tr><th>Оффер</th><th>Доля</th><th>Состояние</th><th><span className="sr-only">Действие</span></th></tr></thead>
         <tbody>{stream.offers.map(offer => <tr key={offer.id} className={offer.removed ? 'removed' : ''}>
