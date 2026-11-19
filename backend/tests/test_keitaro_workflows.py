@@ -215,7 +215,7 @@ def test_removed_offer_is_archived_and_can_be_restored(session):
     assert {item["offer_id"] for item in client.remote_streams[1]["offers"]} == {101, 102}
 
 
-def test_last_offer_guard_and_pinned_share_after_restore(session):
+def test_last_offer_removal_and_pinned_share_after_restore(session):
     client = FakeKeitaro()
     sync_campaign(session, client, 7, force=True)
     pinned = pin_offer(32, 101, PinOffer(pinned=True, share=25), session, client)
@@ -229,9 +229,20 @@ def test_last_offer_guard_and_pinned_share_after_restore(session):
     remove_offer(32, 102, session, client)
     pin_offer(32, 101, PinOffer(pinned=False), session, client)
     remove_offer(32, 103, session, client)
-    with pytest.raises(HTTPException) as last:
-        remove_offer(32, 101, session, client)
-    assert last.value.status_code == 409
+    empty = remove_offer(32, 101, session, client)
+    assert empty["dirty"] is True
+    assert all(offer["removed"] and offer["share"] == 0 for offer in empty["offers"])
+    published = publish(32, session, client)
+    assert published["dirty"] is False
+    assert client.remote_streams[1]["offers"] == []
+    assert any(call == ("update_stream", 32, {"offers": []}) for call in client.calls)
+    assert sync_campaign(session, client, 7, force=True)["streams"][1]["editable"] is True
+    restored = restore_offer(32, 101, session, client)
+    assert next(offer for offer in restored["offers"] if offer["id"] == 101)["share"] == 100
+    publish(32, session, client)
+    assert client.remote_streams[1]["offers"] == [
+        {"offer_id": 101, "share": 100, "state": "active"},
+    ]
 
 
 def test_publish_rejects_remote_change_without_overwriting_it(session):

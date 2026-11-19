@@ -130,7 +130,8 @@ def get_draft(session: Session, client: KeitaroClient, stream_id: int):
 def rebalance(row: StreamDraft):
     active = sorted((o for o in row.offers if not o.removed), key=lambda o: o.offer_id)
     if not active:
-        raise HTTPException(409, "A stream must keep at least one active offer")
+        row.dirty = True
+        return
     pinned = [o for o in active if o.pinned]
     unpinned = [o for o in active if not o.pinned]
     remaining = 100 - sum(o.share for o in pinned)

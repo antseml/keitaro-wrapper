@@ -11,7 +11,7 @@ All endpoints are under `/api`. Errors return `{ "detail": "Description" }` with
 | `GET /api/campaigns/{campaign_id}/streams` | None | Campaign stream collection; see example below |
 | `POST /api/campaigns/{campaign_id}/sync` | None | Same collection; fetches remote state; rejects dirty drafts with 409 |
 | `POST /api/streams/{stream_id}/offers` | `{ "offer_id": 3749 }` | Updated stream draft |
-| `DELETE /api/streams/{stream_id}/offers/{offer_id}` | None | Updated draft with removed offer at 0%; rejects last active offer with 409 |
+| `DELETE /api/streams/{stream_id}/offers/{offer_id}` | None | Updated draft with removed offer at 0%; the last active offer may also be removed |
 | `POST /api/streams/{stream_id}/offers/{offer_id}/restore` | None | Updated stream draft |
 | `PUT /api/streams/{stream_id}/offers/{offer_id}/pin` | `{ "pinned": true, "share": 25 }` or `{ "pinned": false }` | Updated stream draft; impossible allocations yield 422 |
 | `POST /api/streams/{stream_id}/publish` | None | Publishes active offers to Keitaro, rereads remote values and returns stream; external changes yield 409 |

@@ -183,7 +183,6 @@ function StreamCard({ stream, action, busy }: {
   busy: boolean
 }) {
   const [picked, setPicked] = useState<Option | null>(null)
-  const active = stream.offers.filter(offer => !offer.removed)
   const excluded = stream.offers.map(offer => offer.id)
 
   return <section className={`panel stream ${stream.dirty ? 'stream-dirty' : ''}`} aria-label={stream.name}>
@@ -199,8 +198,7 @@ function StreamCard({ stream, action, busy }: {
           <td><span className={`offer-state ${offer.removed ? 'archived' : ''}`}>{offer.removed ? 'Удалён' : 'Активен'}</span></td>
           <td className="actions">{offer.removed
             ? <button className="text-button" disabled={busy} onClick={() => void action(stream.id, () => api.restore(stream.id, offer.id))}>Вернуть</button>
-            : <button className="text-button danger" disabled={busy || active.length <= 1}
-                title={active.length <= 1 ? 'Нельзя удалить последний активный оффер' : undefined}
+            : <button className="text-button danger" disabled={busy}
                 onClick={() => void action(stream.id, () => api.remove(stream.id, offer.id))}>Убрать</button>}</td>
         </tr>)}</tbody></table></div>
       <div className="stream-bottom"><div className="add-offer"><OfferPicker value={picked} onChange={setPicked} disabled={busy} exclude={excluded} />

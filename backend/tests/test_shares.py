@@ -36,10 +36,11 @@ def test_pinned_share_survives_rebalance_and_removed_offer_stays_at_zero():
     }
 
 
-def test_rejects_no_route_and_overallocated_pins():
-    with pytest.raises(HTTPException) as empty:
-        rebalance(stream(offer(10, removed=True)))
-    assert empty.value.status_code == 409
+def test_empty_route_and_overallocated_pins():
+    row = stream(offer(10, removed=True))
+    rebalance(row)
+    assert row.dirty is True
+    assert row.offers[0].share == 0
 
     with pytest.raises(HTTPException) as overallocated:
         rebalance(stream(offer(10, share=80, pinned=True),

@@ -119,8 +119,6 @@ def remove_offer(stream_id: int, offer_id: int, session: Session = Depends(get_s
     offer = next((o for o in row.offers if o.offer_id == offer_id and not o.removed), None)
     if offer is None:
         raise HTTPException(404, "Active offer not found in this stream")
-    if sum(not o.removed for o in row.offers) <= 1:
-        raise HTTPException(409, "The last active offer cannot be removed")
     offer.removed = True
     offer.pinned = False
     offer.share = 0
@@ -193,7 +191,7 @@ def publish(stream_id: int, session: Session = Depends(get_session),
     if signature(remote) != row.remote_signature:
         raise HTTPException(409, "Stream changed in Keitaro; cancel and fetch streams again")
     active = [o for o in row.offers if not o.removed]
-    if not active or sum(o.share for o in active) != 100:
+    if active and sum(o.share for o in active) != 100:
         raise HTTPException(422, "Active offer shares must add up to 100%")
     client.update_stream(stream_id, {"offers": [
         {"offer_id": o.offer_id, "share": o.share, "state": "active"} for o in active
