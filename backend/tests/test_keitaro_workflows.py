@@ -2,12 +2,15 @@ from copy import deepcopy
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
-from app.database import Base
-from app.main import add_offer, cancel, pin_offer, publish, remove_offer, restore_offer
-from app.models import StreamDraft
+from app.database import Base, get_session
+from app.keitaro import get_keitaro
+from app.main import add_offer, app, cancel, pin_offer, publish, remove_offer, restore_offer
+from app.models import CampaignRecord, StreamDraft
 from app.schemas import AddOffer, CampaignCreate, PinOffer
 from app.service import create_campaign, sync_campaign
 
@@ -25,6 +28,12 @@ class FakeKeitaro:
     def __init__(self):
         self.calls = []
         self.actions = [{"key": "http"}]
+        self.remote_campaign = {"id": 7, "name": "test_antipov_campaign1", "alias": "campaign-one"}
+        self.remote_offers = [
+            {"id": 101, "name": "Alpha", "state": "active"},
+            {"id": 102, "name": "Beta", "state": "active"},
+            {"id": 103, "name": "Gamma", "state": "active"},
+        ]
         self.remote_streams = [
             {"id": 31, "campaign_id": 7, "name": "Google", "type": "forced",
              "schema": "redirect", "offers": []},
@@ -37,15 +46,17 @@ class FakeKeitaro:
 
     def campaign(self, campaign_id):
         assert campaign_id == 7
-        return {"id": 7, "name": "test_antipov_campaign1"}
+        return self.remote_campaign.copy()
+
+    def campaigns(self):
+        return [self.campaign(7)]
 
     def streams(self, campaign_id):
         assert campaign_id == 7
         return deepcopy(self.remote_streams)
 
     def offers(self):
-        return [{"id": 101, "name": "Alpha"}, {"id": 102, "name": "Beta"},
-                {"id": 103, "name": "Gamma"}]
+        return deepcopy(self.remote_offers)
 
     def domains(self):
         return [{"id": 1, "name": "tracker.example", "state": "active"}]
@@ -60,9 +71,10 @@ class FakeKeitaro:
         return [{"id": 3, "name": "FORTESTS"}]
 
     def offer(self, offer_id):
-        assert offer_id in (101, 102, 103)
-        return {"id": offer_id, "name": {101: "Alpha", 102: "Beta", 103: "Gamma"}[offer_id],
-                "state": "active"}
+        for offer in self.remote_offers:
+            if offer["id"] == offer_id:
+                return offer.copy()
+        raise HTTPException(404, "Keitaro resource not found")
 
     def create_campaign(self, body):
         self.calls.append(("create_campaign", body))
@@ -81,6 +93,31 @@ class FakeKeitaro:
         self.remote_streams[1]["offers"] = deepcopy(body["offers"])
 
 
+@pytest.fixture
+def api():
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    keitaro = FakeKeitaro()
+
+    def request_session():
+        with Session(engine) as db:
+            yield db
+
+    app.dependency_overrides[get_session] = request_session
+    app.dependency_overrides[get_keitaro] = lambda: keitaro
+    try:
+        with TestClient(app) as client:
+            yield client, keitaro, engine
+    finally:
+        app.dependency_overrides.pop(get_session)
+        app.dependency_overrides.pop(get_keitaro)
+        engine.dispose()
+
+
 def test_creator_configures_two_routes_before_enabling_campaign(session):
     client = FakeKeitaro()
     result = create_campaign(session, client, CampaignCreate(
@@ -95,11 +132,16 @@ def test_creator_configures_two_routes_before_enabling_campaign(session):
     assert (campaign["domain_id"], campaign["group_id"], campaign["traffic_source_id"]) == (1, 2, 3)
     assert campaign["state"] == "disabled"
     google, fallback = client.calls[1][1], client.calls[2][1]
+    assert (google["campaign_id"], google["position"]) == (7, 1)
     assert google["type"] == "forced"
     assert google["schema"] == "redirect"
+    assert google["action_type"] == "http"
     assert google["action_payload"] == "https://google.com"
     assert google["filters"] == [{"name": "country", "mode": "accept", "payload": ["AU"]}]
+    assert (fallback["campaign_id"], fallback["position"]) == (7, 2)
     assert fallback["type"] == "default"
+    assert fallback["schema"] == "landings"
+    assert not fallback.get("filters")
     assert fallback["offers"] == [{"offer_id": 101, "share": 100, "state": "active"}]
     assert client.calls[3] == ("update_campaign", 7, {"state": "active"})
 
@@ -205,3 +247,125 @@ def test_publish_rejects_remote_change_without_overwriting_it(session):
 
     assert conflict.value.status_code == 409
     assert not any(call[0] == "update_stream" for call in client.calls)
+
+
+def test_creator_http_preserves_prefix_normalizes_geo_and_checks_offer_id(api):
+    client, keitaro, _ = api
+    payload = {
+        "name": "  test_antipov_new  ", "geo": "au", "offer_id": 103,
+        "domain_id": 1, "group_id": 2, "source_id": 3,
+    }
+
+    assert client.get("/api/offers", params={"q": "103"}).json() == [
+        {"id": 103, "name": "Gamma"},
+    ]
+    response = client.post("/api/campaigns", json=payload)
+
+    assert response.status_code == 201
+    result = response.json()
+    assert result["name"] == "test_antipov_new"
+    assert result["url"] == f'https://tracker.example/{result["alias"]}'
+    assert keitaro.calls[1][1]["filters"][0]["payload"] == ["AU"]
+    assert keitaro.calls[2][1]["offers"][0]["offer_id"] == 103
+
+
+@pytest.mark.parametrize(
+    ("invalid_data", "expected_status"),
+    [
+        ({"name": " "}, 422),
+        ({"geo": "A1"}, 422),
+        ({"offer_id": 0}, 422),
+        ({"offer_id": 999}, 404),
+        ({"offer_id": 103}, 422),
+        ({"domain_id": 999}, 422),
+        ({"group_id": 999}, 422),
+        ({"source_id": 999}, 422),
+    ],
+)
+def test_creator_invalid_requests_do_not_write_to_keitaro(api, invalid_data, expected_status):
+    client, keitaro, _ = api
+    keitaro.remote_offers[2]["state"] = "disabled"
+    payload = {
+        "name": "new", "geo": "AU", "offer_id": 101,
+        "domain_id": 1, "group_id": 2, "source_id": 3,
+    }
+
+    assert client.post("/api/campaigns", json=payload | invalid_data).status_code == expected_status
+    assert keitaro.calls == []
+
+
+def test_creator_keeps_incomplete_campaign_disabled_and_out_of_cache(session, monkeypatch):
+    keitaro = FakeKeitaro()
+    create_stream = keitaro.create_stream
+
+    def reject_fallback(body):
+        if body["type"] == "default":
+            raise HTTPException(502, "Upstream rejected fallback")
+        return create_stream(body)
+
+    monkeypatch.setattr(keitaro, "create_stream", reject_fallback)
+
+    with pytest.raises(HTTPException) as error:
+        create_campaign(session, keitaro, CampaignCreate(
+            name="partial", geo="AU", offer_id=101, domain_id=1, group_id=2, source_id=3,
+        ))
+
+    assert error.value.status_code == 502
+    assert [call[0] for call in keitaro.calls] == ["create_campaign", "create_stream"]
+    assert keitaro.calls[0][1]["state"] == "disabled"
+    assert session.get(CampaignRecord, 7) is None
+
+
+def test_existing_campaign_uses_current_domain_instead_of_cached_domain(api):
+    client, keitaro, engine = api
+    keitaro.remote_campaign.update(name="Existing campaign", domain_id=1)
+    with Session(engine) as db:
+        db.add(CampaignRecord(id=7, name="Old name", domain_id=99, domain_name="old.example"))
+        db.commit()
+
+    response = client.get("/api/campaigns", params={"q": "existing"})
+    assert response.status_code == 200
+    assert response.json() == [{
+        "id": 7, "name": "Existing campaign", "alias": "campaign-one",
+        "url": "https://tracker.example/campaign-one",
+    }]
+
+    del keitaro.remote_campaign["domain_id"]
+    assert client.get("/api/campaigns").json()[0]["url"] == "https://old.example/campaign-one"
+    with Session(engine) as db:
+        db.delete(db.get(CampaignRecord, 7))
+        db.commit()
+    assert client.get("/api/campaigns").json()[0]["url"] is None
+
+
+def test_editor_http_updates_existing_campaign_and_rolls_back_invalid_drafts(api):
+    client, keitaro, _ = api
+    keitaro.remote_campaign["name"] = "Existing campaign"
+    streams_url = "/api/campaigns/7/streams"
+    offers_url = "/api/streams/32/offers"
+
+    def shares(response):
+        assert response.status_code == 200
+        return {item["id"]: item["share"] for item in response.json()["offers"]}
+
+    response = client.get(streams_url)
+    assert response.status_code == 200
+    assert response.json()["streams"][0]["editable"] is False
+    assert client.post("/api/streams/31/offers", json={"offer_id": 103}).status_code == 409
+    assert client.post(offers_url, json={"offer_id": 101}).status_code == 409
+    assert client.put(offers_url + "/101/pin", json={"pinned": True, "share": 100}).status_code == 422
+    assert client.get(streams_url).json() == response.json()
+
+    assert shares(client.post(offers_url, json={"offer_id": 103})) == {101: 34, 102: 33, 103: 33}
+    assert shares(client.put(offers_url + "/101/pin", json={"pinned": True, "share": 25})) == {
+        101: 25, 102: 38, 103: 37,
+    }
+    assert shares(client.delete(offers_url + "/102")) == {101: 25, 102: 0, 103: 75}
+    assert keitaro.calls == []
+    assert shares(client.post("/api/streams/32/publish")) == {101: 25, 102: 0, 103: 75}
+    assert keitaro.calls == [("update_stream", 32, {"offers": [
+        {"offer_id": 101, "share": 25, "state": "active"},
+        {"offer_id": 103, "share": 75, "state": "active"},
+    ]})]
+    assert shares(client.post(offers_url + "/102/restore")) == {101: 25, 102: 38, 103: 37}
+    assert shares(client.post("/api/streams/32/cancel")) == {101: 25, 102: 0, 103: 75}

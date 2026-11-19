@@ -5,7 +5,7 @@ FastAPI + SQLAlchemy backend and React + TypeScript frontend for creating a two-
 ## What it does
 
 - Creates a `test_antipov_` campaign using an existing domain, campaign group, traffic source and offer. A country-filtered flow redirects to Google; a fallback flow sends the remaining traffic to the selected offer.
-- Fetches campaign streams. Streams without offers are displayed without attempting to edit their routing rules.
+- Fetches existing campaign streams. Streams without offers are displayed without attempting to edit their routing rules.
 - Adds, removes, restores and pins offers in an editable stream. Changes remain local until **Publish**; **Cancel** discards the draft. Removed offers remain visible in the local archive at 0%.
 - On refresh, reconciles offers removed directly in Keitaro. Publishing checks that Keitaro's offer list and shares have not changed since the draft was loaded.
 - Distributes the remaining integer percentage points among unpinned active offers in stable offer-ID order, so the total is exactly 100%.
@@ -43,7 +43,7 @@ The default SQLite database is created in `backend/`. To roll back the initial m
 From `frontend/` in a second terminal:
 
 ```sh
-npm install
+npm ci
 npm run dev
 ```
 
@@ -60,4 +60,4 @@ npm run build
 
 For a live check, create a campaign through the UI with a test offer and inspect both flows in Keitaro. Add another offer and check that Keitaro still shows the original state before Publish; then publish and compare the active offers and their shares. Repeat for Cancel, Remove, Bring back and a pinned share. The creator initially keeps a partially created campaign disabled if stream creation fails, so it can be inspected safely.
 
-Never commit `.env`, access tokens or credentials. This is a test instance tool; the editor is restricted to campaign names starting with `test_antipov_`.
+Never commit `.env`, access tokens or credentials. This is a test instance tool; the editor lists existing Keitaro campaigns and publishes changes only when you press **Publish**.

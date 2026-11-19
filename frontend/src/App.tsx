@@ -237,6 +237,7 @@ function Editor({ initialCampaign, onSelect }: { initialCampaign: Campaign | nul
   useEffect(() => {
     if (!selected) { setStreams([]); return }
     let current = true
+    setStreams([])
     setBusy(true); setError(''); setNotice('')
     api.streams(selected.id).then(data => { if (current) setStreams(data.streams) })
       .catch(failure => { if (current) setError(errorText(failure)) })
@@ -270,7 +271,7 @@ function Editor({ initialCampaign, onSelect }: { initialCampaign: Campaign | nul
       <input id="campaign-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Название или ID" /></div>
       <div className="campaign-list">{campaigns.map(campaign => <button key={campaign.id}
         className={`campaign-item ${campaign.id === selected?.id ? 'selected' : ''}`}
-        onClick={() => { setSelected(campaign); onSelect(campaign) }}>
+        onClick={() => { setStreams([]); setSelected(campaign); onSelect(campaign) }}>
         <span>{campaign.name}</span><span className="mono">#{campaign.id}</span></button>)}
         {!campaigns.length && <p className="sidebar-empty">Кампании не найдены</p>}</div></aside>
     <main className="workspace"><div className="workspace-header"><div><p className="eyebrow">Потоки и офферы</p>

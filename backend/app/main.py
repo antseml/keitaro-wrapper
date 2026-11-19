@@ -48,16 +48,20 @@ def campaigns(q: str = Query(default="", max_length=150),
               session: Session = Depends(get_session), client: KeitaroClient = Depends(get_keitaro)):
     term = q.strip().casefold()
     records = {record.id: record for record in session.query(CampaignRecord).all()}
+    domains = {int(domain["id"]): domain["name"] for domain in client.domains()}
     result = []
     for item in client.campaigns():
         campaign_id = int(item["id"])
         name = item.get("name", "")
-        if not name.startswith(settings.campaign_prefix) or item.get("state") == "deleted":
+        if item.get("state") == "deleted":
             continue
         if term and term not in name.casefold() and term not in str(campaign_id):
             continue
         record = records.get(campaign_id)
-        domain_name = record.domain_name if record else None
+        domain_id = item.get("domain_id")
+        domain_name = domains.get(int(domain_id)) if domain_id is not None else None
+        if domain_id is None and record is not None:
+            domain_name = record.domain_name
         url = None
         if domain_name:
             base = domain_name if domain_name.startswith(("http://", "https://")) else "https://" + domain_name

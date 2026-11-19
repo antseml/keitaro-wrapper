@@ -47,10 +47,7 @@ def _names(client: KeitaroClient) -> dict[int, str]:
 
 
 def ensure_campaign(client: KeitaroClient, campaign_id: int) -> dict:
-    campaign = client.campaign(campaign_id)
-    if not campaign.get("name", "").startswith(settings.campaign_prefix):
-        raise HTTPException(403, "Only test_antipov_ campaigns can be edited")
-    return campaign
+    return client.campaign(campaign_id)
 
 
 def _sync_one(session: Session, remote: dict, names: dict[int, str]):
