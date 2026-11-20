@@ -1,55 +1,57 @@
-# Keitaro campaign wrapper
+# Обёртка для кампаний Keitaro
 
-FastAPI + SQLAlchemy backend and React + TypeScript frontend for creating a two-flow Keitaro campaign and editing offer shares through a local draft. The API key stays on the server.
+Приложение на FastAPI, SQLAlchemy, React и TypeScript для создания кампаний Keitaro с двумя потоками и настройки долей офферов через локальный черновик. API-ключ Keitaro хранится на сервере.
 
-## What it does
+## Возможности
 
-- Creates a `test_antipov_` campaign using an existing domain, campaign group, traffic source and offer. A country-filtered flow redirects to Google; a fallback flow sends the remaining traffic to the selected offer.
-- Fetches existing campaign streams. Streams without offers are displayed without attempting to edit their routing rules.
-- Adds, removes, restores and pins offers in an editable stream. Changes remain local until **Publish**; **Cancel** discards the draft. Removed offers remain visible in the local archive at 0%.
-- On refresh, reconciles offers removed directly in Keitaro. Publishing checks that Keitaro's offer list and shares have not changed since the draft was loaded.
-- Distributes the remaining integer percentage points among unpinned active offers in stable offer-ID order, so the total is exactly 100%.
+- Создание кампании с префиксом `test_antipov_` на основе существующих домена, группы кампаний, источника трафика и оффера. Поток с фильтром по стране перенаправляет пользователей в Google, а резервный поток направляет остальных на выбранный оффер.
+- Загрузка потоков существующих кампаний. Потоки без офферов отображаются без попытки изменить их правила маршрутизации.
+- Добавление, удаление, восстановление и закрепление долей офферов в редактируемом потоке. Изменения остаются в черновике до нажатия **Publish** («Опубликовать»); **Cancel** («Отменить») сбрасывает черновик. Удалённые офферы остаются в локальном архиве с долей 0 %.
+- Сверка при обновлении с офферами, удалёнными непосредственно в Keitaro. Перед публикацией приложение проверяет, не изменились ли в Keitaro список офферов и их доли с момента загрузки черновика.
+- Распределение оставшихся целых процентов между активными офферами без закреплённой доли в порядке возрастания ID. Сумма долей всегда составляет ровно 100 %.
 
-## Requirements
+## Требования
 
-- Python 3.12 or newer, Node.js 20 or newer
-- A Keitaro account with an Admin API key and permission to read campaigns, offers, domains, groups and traffic sources and to write campaigns and streams
+- Python 3.12 или новее и Node.js 20 или новее.
+- Аккаунт Keitaro с ключом Admin API и правами на чтение кампаний, офферов, доменов, групп и источников трафика, а также на изменение кампаний и потоков.
 
-## Backend and migrations
+## Запуск бэкенда
 
-From `backend/`:
+В каталоге `backend/` создайте виртуальное окружение:
 
 ```sh
 python -m venv .venv
 ```
 
-Activate the environment (`.venv\Scripts\activate` on Windows or `source .venv/bin/activate` on macOS/Linux), then:
+Активируйте его (`.venv\Scripts\activate` в Windows или `source .venv/bin/activate` в macOS/Linux), затем установите зависимости:
 
 ```sh
 python -m pip install -r requirements.txt
 ```
 
-Copy `.env.example` to `.env`. Set `KEITARO_BASE_URL` to the tracker origin, `KEITARO_API_KEY` to a key from the Keitaro account's API keys page, and `DATABASE_URL` to the local SQLAlchemy database URL. The `.env` file is ignored by Git. No tracker login or API key is required in the browser.
+Скопируйте `.env.example` в `.env`. Укажите в `KEITARO_BASE_URL` адрес трекера, в `KEITARO_API_KEY` ключ из раздела API-ключей Keitaro, а в `DATABASE_URL` — адрес локальной базы данных в формате SQLAlchemy. Файл `.env` исключён из Git. Вводить логин или API-ключ трекера в браузере не требуется.
+
+Примените миграции и запустите сервер:
 
 ```sh
 alembic upgrade head
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The default SQLite database is created in `backend/`. On an existing installation, run `alembic upgrade head` before restarting the backend to add stream state tracking. To roll back all migrations, run `alembic downgrade base`. API documentation is at `http://127.0.0.1:8000/docs`; the frontend contract is documented in [`backend/API_CONTRACT.md`](backend/API_CONTRACT.md).
+По умолчанию база SQLite создаётся в `backend/`. При обновлении существующей установки перед перезапуском бэкенда выполните `alembic upgrade head`: миграция добавит хранение состояния потоков. Для отката всех миграций используйте `alembic downgrade base`. Документация API доступна по адресу `http://127.0.0.1:8000/docs`, контракт для фронтенда описан в [`backend/API_CONTRACT.md`](backend/API_CONTRACT.md).
 
-## Frontend
+## Запуск фронтенда
 
-From `frontend/` in a second terminal:
+Во втором терминале перейдите в каталог `frontend/` и выполните:
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. Vite proxies `/api` to FastAPI. Run `npm run build` to check the production bundle. The backend has no user authentication and is intended to run on localhost for this test; do not expose its API publicly without adding an authentication layer.
+Откройте `http://127.0.0.1:5173`. Vite перенаправляет запросы `/api` на FastAPI. Для проверки сборки выполните `npm run build`. В бэкенде нет аутентификации пользователей: это приложение рассчитано на локальный запуск. Перед публикацией API в интернете необходимо добавить аутентификацию.
 
-## Verification
+## Проверка
 
 ```sh
 cd backend
@@ -58,6 +60,6 @@ cd ../frontend
 npm run build
 ```
 
-For a live check, create a campaign through the UI with a test offer and inspect both flows in Keitaro. Add another offer and check that Keitaro still shows the original state before Publish; then publish and compare the active offers and their shares. Repeat for Cancel, Remove, Bring back and a pinned share. The creator initially keeps a partially created campaign disabled if stream creation fails, so it can be inspected safely.
+Для проверки с реальным Keitaro создайте кампанию через интерфейс с тестовым оффером и проверьте оба потока в трекере. Добавьте ещё один оффер и убедитесь, что до нажатия **Publish** состояние в Keitaro не изменилось. Затем опубликуйте черновик и сравните активные офферы и их доли. Аналогично проверьте **Cancel**, удаление, восстановление и закрепление доли. Если при создании потоков возникнет ошибка, частично созданная кампания останется отключённой, чтобы её можно было безопасно проверить.
 
-Never commit `.env`, access tokens or credentials. This is a test instance tool; the editor lists existing Keitaro campaigns and publishes changes only when you press **Publish**.
+Редактор показывает существующие кампании Keitaro и отправляет изменения в трекер только после нажатия **Publish**.
