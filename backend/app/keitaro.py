@@ -3,10 +3,12 @@ from fastapi import HTTPException
 
 from .config import settings
 
+ADMIN_API_PATH = "/admin_api/v1"
+
 
 class KeitaroClient:
     def __init__(self, base_url: str | None = None, api_key: str | None = None):
-        self.base_url = (base_url or settings.keitaro_base_url).rstrip("/")
+        self.base_url = (base_url or settings.keitaro_base_url).rstrip("/").removesuffix(ADMIN_API_PATH)
         self.api_key = api_key if api_key is not None else settings.keitaro_api_key
         if not self.api_key:
             raise HTTPException(503, "Keitaro API key is not configured")
@@ -21,7 +23,7 @@ class KeitaroClient:
 
     def request(self, method: str, path: str, **kwargs):
         try:
-            response = self.http.request(method, f"/admin_api/v1/{path.lstrip('/')}", **kwargs)
+            response = self.http.request(method, f"{ADMIN_API_PATH}/{path.lstrip('/')}", **kwargs)
         except httpx.RequestError as exc:
             raise HTTPException(502, "Keitaro is temporarily unreachable") from exc
         if response.is_error:
@@ -38,7 +40,17 @@ class KeitaroClient:
             raise HTTPException(502, "Keitaro returned invalid JSON") from exc
 
     def campaigns(self):
-        return self.request("GET", "campaigns", params={"limit": 1000})
+        limit = 100
+        offset = 0
+        while True:
+            page = self.request("GET", "campaigns", params={"offset": offset, "limit": limit})
+            yield from page
+            if len(page) < limit:
+                return
+            offset += len(page)
+
+    def campaign_editor_url(self, campaign_id: int) -> str:
+        return f"{self.base_url}/admin/#!/campaign.editor/{campaign_id}"
 
     def campaign(self, campaign_id: int):
         return self.request("GET", f"campaigns/{campaign_id}")
@@ -72,9 +84,6 @@ class KeitaroClient:
 
     def sources(self):
         return self.request("GET", "traffic_sources")
-
-    def stream_actions(self):
-        return self.request("GET", "streams_actions")
 
 
 def get_keitaro():

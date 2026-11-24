@@ -116,6 +116,12 @@ th:nth-child(3) { width: 96px; }
 th:last-child { width: 80px; }
 td { padding: 12px 8px; border-bottom: 1px solid #edf0f3; font-size: 14px; vertical-align: middle; }
 .offer-id { display: inline-block; margin-right: 10px; color: #537b94; font-size: 12px; }
+.purge-offer { display: inline-grid; place-items: center; width: 24px; height: 24px; margin-right: 4px; padding: 0; vertical-align: middle; border: 0; border-radius: 4px; background: transparent; color: #9c3030; font-size: 16px; line-height: 1; }
+.purge-offer:hover:not(:disabled) { background: #fff3f3; }
+.purge-dialog { width: min(400px, calc(100% - 32px)); padding: 24px; border: 1px solid #e1e7ec; border-radius: 16px; color: inherit; background: #fff; }
+.purge-dialog::backdrop { background: rgba(23, 32, 44, .42); }
+.purge-dialog p { margin: 0 0 20px; line-height: 1.5; }
+.purge-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .offer-name { overflow-wrap: anywhere; }
 tr.removed .offer-id, tr.removed .offer-name { color: #9aa5af; }
 .weight-cell { display: flex; align-items: center; gap: 4px; }

@@ -35,6 +35,7 @@ def as_stream(row: StreamDraft) -> dict:
              "share": 0 if offer.removed else offer.share,
              "pinned": offer.pinned, "removed": offer.removed}
             for offer in row.offers
+            if not (offer.removed and offer.purged)
         ],
     }
 
@@ -87,8 +88,11 @@ def _sync_one(session: Session, remote: dict, names: dict[int, str]):
         offer.baseline_share = offer.share
         offer.baseline_removed = False
         offer.baseline_pinned = offer.pinned
-    for offer in row.offers:
+    for offer in list(row.offers):
         if offer.offer_id not in seen:
+            if offer.purged:
+                row.offers.remove(offer)
+                continue
             offer.removed = True
             offer.share = 0
             offer.pinned = False
@@ -151,11 +155,6 @@ def rebalance(row: StreamDraft):
 
 def create_campaign(session: Session, client: KeitaroClient, data: CampaignCreate):
     full_name = data.name if data.name.startswith(settings.campaign_prefix) else settings.campaign_prefix + data.name
-    actions = client.stream_actions()
-    if not isinstance(actions, list) or not all(isinstance(item, dict) and isinstance(item.get("key"), str) for item in actions):
-        raise HTTPException(502, "Keitaro returned an unexpected list of stream actions")
-    if "http" not in {item["key"] for item in actions}:
-        raise HTTPException(422, "HTTP redirect action is unavailable in this Keitaro; check Streams actions in the Admin API")
     domains = {int(x["id"]): x for x in client.domains() if x.get("state", "active") == "active"}
     groups = {int(x["id"]): x for x in client.groups()}
     sources = {int(x["id"]): x for x in client.sources()}
@@ -175,25 +174,24 @@ def create_campaign(session: Session, client: KeitaroClient, data: CampaignCreat
     try:
         client.create_stream({
             "campaign_id": campaign_id, "name": "Google · " + data.geo.upper(),
-            "type": "forced", "position": 1, "schema": "redirect",
+            "type": "regular", "position": 1, "schema": "redirect",
             "action_type": "http", "action_payload": "https://google.com",
-            "collect_clicks": True,
             "filters": [{"name": "country", "mode": "accept", "payload": [data.geo.upper()]}],
         })
         client.create_stream({
             "campaign_id": campaign_id, "name": "Offers", "type": "default",
-            "position": 2, "schema": "landings", "action_type": "http",
-            "collect_clicks": True,
+            "position": 2, "schema": "landings",
             "offers": [{"offer_id": data.offer_id, "share": 100, "state": "active"}],
         })
+    except HTTPException as exc:
+        raise HTTPException(502, f"Campaign {campaign_id} was left disabled because stream creation failed: {exc.detail}") from exc
+    try:
         client.update_campaign(campaign_id, {"state": "active"})
-    except Exception:
-        # Campaign remains disabled for inspection/retry; never delete a partially created resource silently.
-        raise HTTPException(502, f"Campaign {campaign_id} was left disabled because stream creation failed")
+    except HTTPException as exc:
+        raise HTTPException(502, f"Could not confirm activation of campaign {campaign_id}: {exc.detail}") from exc
     domain_name = domains[data.domain_id]["name"]
-    domain_url = domain_name if domain_name.startswith(("https://", "http://")) else "https://" + domain_name
-    url = domain_url.rstrip("/") + "/" + alias
     session.merge(CampaignRecord(id=campaign_id, name=full_name,
                                  domain_id=data.domain_id, domain_name=domain_name))
     session.commit()
-    return {"id": campaign_id, "name": full_name, "alias": alias, "url": url}
+    return {"id": campaign_id, "name": full_name, "alias": campaign.get("alias") or alias,
+            "url": client.campaign_editor_url(campaign_id)}

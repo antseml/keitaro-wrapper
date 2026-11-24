@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_session
 from .keitaro import KeitaroClient, get_keitaro
-from .models import CampaignRecord, DraftOffer, StreamDraft
+from .models import DraftOffer, StreamDraft
 from .schemas import AddOffer, CampaignCreate, PinOffer
 from .service import (
     _names, _sync_one, as_stream, create_campaign, ensure_campaign,
@@ -45,10 +45,8 @@ def offers(q: str = Query(default="", max_length=150), client: KeitaroClient = D
 
 @app.get("/api/campaigns")
 def campaigns(q: str = Query(default="", max_length=150),
-              session: Session = Depends(get_session), client: KeitaroClient = Depends(get_keitaro)):
+              client: KeitaroClient = Depends(get_keitaro)):
     term = q.strip().casefold()
-    records = {record.id: record for record in session.query(CampaignRecord).all()}
-    domains = {int(domain["id"]): domain["name"] for domain in client.domains()}
     result = []
     for item in client.campaigns():
         campaign_id = int(item["id"])
@@ -57,17 +55,8 @@ def campaigns(q: str = Query(default="", max_length=150),
             continue
         if term and term not in name.casefold() and term not in str(campaign_id):
             continue
-        record = records.get(campaign_id)
-        domain_id = item.get("domain_id")
-        domain_name = domains.get(int(domain_id)) if domain_id is not None else None
-        if domain_id is None and record is not None:
-            domain_name = record.domain_name
-        url = None
-        if domain_name:
-            base = domain_name if domain_name.startswith(("http://", "https://")) else "https://" + domain_name
-            url = base.rstrip("/") + "/" + item.get("alias", "")
         result.append({"id": campaign_id, "name": name,
-                       "alias": item.get("alias", ""), "url": url})
+                       "alias": item.get("alias") or "", "url": client.campaign_editor_url(campaign_id)})
     return result
 
 
@@ -105,6 +94,7 @@ def add_offer(stream_id: int, payload: AddOffer, session: Session = Depends(get_
         row.offers.append(offer)
     else:
         offer.removed = False
+        offer.purged = False
         offer.pinned = False
         offer.name = remote_offer["name"]
     rebalance(row)
@@ -120,9 +110,26 @@ def remove_offer(stream_id: int, offer_id: int, session: Session = Depends(get_s
     if offer is None:
         raise HTTPException(404, "Active offer not found in this stream")
     offer.removed = True
+    offer.purged = False
     offer.pinned = False
     offer.share = 0
     rebalance(row)
+    session.commit()
+    return as_stream(row)
+
+
+@app.delete("/api/streams/{stream_id}/offers/{offer_id}/archive")
+def purge_offer(stream_id: int, offer_id: int, session: Session = Depends(get_session),
+                client: KeitaroClient = Depends(get_keitaro)):
+    row = get_draft(session, client, stream_id)
+    offer = next((o for o in row.offers if o.offer_id == offer_id and o.removed), None)
+    if offer is None:
+        raise HTTPException(404, "Archived offer not found in this stream")
+    if offer.baseline_share is None or offer.baseline_removed:
+        row.offers.remove(offer)
+    else:
+        # Keep the upstream baseline until this draft is published or cancelled.
+        offer.purged = True
     session.commit()
     return as_stream(row)
 
@@ -131,7 +138,7 @@ def remove_offer(stream_id: int, offer_id: int, session: Session = Depends(get_s
 def restore_offer(stream_id: int, offer_id: int, session: Session = Depends(get_session),
                   client: KeitaroClient = Depends(get_keitaro)):
     row = get_draft(session, client, stream_id)
-    offer = next((o for o in row.offers if o.offer_id == offer_id and o.removed), None)
+    offer = next((o for o in row.offers if o.offer_id == offer_id and o.removed and not o.purged), None)
     if offer is None:
         raise HTTPException(404, "Archived offer not found in this stream")
     remote_offer = client.offer(offer_id)
@@ -172,6 +179,7 @@ def cancel(stream_id: int, session: Session = Depends(get_session),
             offer.share = offer.baseline_share
             offer.pinned = offer.baseline_pinned
             offer.removed = offer.baseline_removed
+            offer.purged = False
     row.dirty = False
     session.commit()
     return as_stream(row)

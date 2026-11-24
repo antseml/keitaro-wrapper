@@ -52,6 +52,7 @@ export const api = {
   sync: (campaignId: number) => request<StreamList>(`/campaigns/${campaignId}/sync`, { method: 'POST' }),
   add: (streamId: number, offerId: number) => request<Stream>(`/streams/${streamId}/offers`, json({ offer_id: offerId })),
   remove: (streamId: number, offerId: number) => request<Stream>(`/streams/${streamId}/offers/${offerId}`, { method: 'DELETE' }),
+  purge: (streamId: number, offerId: number) => request<Stream>(`/streams/${streamId}/offers/${offerId}/archive`, { method: 'DELETE' }),
   restore: (streamId: number, offerId: number) => request<Stream>(`/streams/${streamId}/offers/${offerId}/restore`, { method: 'POST' }),
   pin: (streamId: number, offerId: number, pinned: boolean, share: number) =>
     request<Stream>(`/streams/${streamId}/offers/${offerId}/pin`, {

@@ -41,6 +41,7 @@ class DraftOffer(Base):
     share: Mapped[int] = mapped_column(Integer, default=0)
     pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     removed: Mapped[bool] = mapped_column(Boolean, default=False)
+    purged: Mapped[bool] = mapped_column(Boolean, default=False)
     baseline_share: Mapped[int | None] = mapped_column(Integer, nullable=True)
     baseline_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     baseline_removed: Mapped[bool] = mapped_column(Boolean, default=False)

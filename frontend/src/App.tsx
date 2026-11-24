@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { api, type Campaign, type Meta, type Offer, type Option, type Stream, type StreamList } from './api'
 
 type View = 'create' | 'edit'
@@ -183,8 +183,28 @@ function StreamCard({ stream, action, busy }: {
   busy: boolean
 }) {
   const [picked, setPicked] = useState<Option | null>(null)
+  const purgeDialog = useRef<HTMLDialogElement>(null)
+  const purgeTarget = useRef<number | null>(null)
+  const purgeLabelId = useId()
   const excluded = stream.offers.map(offer => offer.id)
   const willPause = stream.dirty && stream.offers.every(offer => offer.removed)
+
+  function askToPurge(offerId: number) {
+    const dialog = purgeDialog.current
+    if (!dialog) return
+    purgeTarget.current = offerId
+    dialog.returnValue = ''
+    dialog.showModal()
+    dialog.querySelector('button')?.focus()
+  }
+
+  function finishPurge() {
+    const offerId = purgeTarget.current
+    purgeTarget.current = null
+    if (offerId !== null && purgeDialog.current?.returnValue === 'yes') {
+      void action(stream.id, () => api.purge(stream.id, offerId))
+    }
+  }
 
   return <section className={`panel stream ${stream.dirty ? 'stream-dirty' : ''}`} aria-label={stream.name}>
     <div className="stream-heading"><div className="stream-title"><span className={`state-dot ${stream.dirty ? 'pending' : stream.state === 'disabled' ? 'disabled' : ''}`} />
@@ -193,7 +213,9 @@ function StreamCard({ stream, action, busy }: {
     {stream.editable ? <>
       <div className="table-scroll"><table><thead><tr><th>Оффер</th><th>Доля</th><th>Состояние</th><th><span className="sr-only">Действие</span></th></tr></thead>
         <tbody>{stream.offers.map(offer => <tr key={offer.id} className={offer.removed ? 'removed' : ''}>
-          <td><span className="offer-id mono">#{offer.id}</span><span className="offer-name">{offer.name}</span></td>
+          <td>{offer.removed && <button type="button" className="purge-offer" disabled={busy}
+            aria-label={`Окончательно удалить оффер #${offer.id}`} onClick={() => askToPurge(offer.id)}>×</button>}
+            <span className="offer-id mono">#{offer.id}</span><span className="offer-name">{offer.name}</span></td>
           <td><PinControl offer={offer} busy={busy} onPin={(pinned, share) =>
             action(stream.id, () => api.pin(stream.id, offer.id, pinned, share))} /></td>
           <td><span className={`offer-state ${offer.removed ? 'archived' : ''}`}>{offer.removed ? 'Удалён' : 'Активен'}</span></td>
@@ -202,6 +224,15 @@ function StreamCard({ stream, action, busy }: {
             : <button className="text-button danger" disabled={busy}
                 onClick={() => void action(stream.id, () => api.remove(stream.id, offer.id))}>Убрать</button>}</td>
         </tr>)}</tbody></table></div>
+      <dialog ref={purgeDialog} className="purge-dialog" aria-labelledby={purgeLabelId} onClose={finishPurge}>
+        <form method="dialog">
+          <p id={purgeLabelId}>Это окончательно удалит оффер, вы уверены?</p>
+          <div className="purge-dialog-actions">
+            <button className="secondary" value="no">Нет</button>
+            <button className="primary" value="yes">Да</button>
+          </div>
+        </form>
+      </dialog>
       <div className="stream-bottom"><div className="add-offer"><OfferPicker value={picked} onChange={setPicked} disabled={busy} exclude={excluded} />
         <button className="secondary" disabled={!picked || busy} onClick={() => {
           if (!picked) return
@@ -278,7 +309,7 @@ function Editor({ initialCampaign, onSelect }: { initialCampaign: Campaign | nul
       {selected && <span className="workspace-id mono">ID {selected.id} · {selected.alias}</span>}</div>
       {selected && <button className="secondary" disabled={busy || dirty > 0} title={dirty ? 'Сначала опубликуйте или отмените черновики' : undefined}
         onClick={() => void sync()}>Загрузить потоки</button>}</div>
-      {selected?.url && <a className="campaign-url" href={selected.url} target="_blank" rel="noreferrer">{selected.url}</a>}
+      {selected?.url && <a className="campaign-url" href={selected.url} target="_blank" rel="noreferrer">Открыть кампанию в Keitaro</a>}
       {dirty > 0 && <p className="draft-notice" role="status">Не опубликовано потоков: {dirty}. Изменения пока видны только здесь.</p>}
       {notice && <p className="success" role="status">{notice}</p>}
       {error && <p className="alert" role="alert">{error}</p>}
@@ -298,7 +329,7 @@ export default function App() {
     <nav aria-label="Разделы"><button className={view === 'create' ? 'current' : ''} aria-current={view === 'create' ? 'page' : undefined}
       onClick={() => setView('create')}>Создать</button><button className={view === 'edit' ? 'current' : ''}
       aria-current={view === 'edit' ? 'page' : undefined} onClick={() => setView('edit')}>Редактор</button></nav>
-    <span className="environment">Тестовый трекер</span></header>
+    <span className="environment">Учебный стенд</span></header>
     {view === 'create'
       ? <Creator onCreated={created => { setCampaign(created); setView('edit') }} />
       : <Editor initialCampaign={campaign} onSelect={setCampaign} />}

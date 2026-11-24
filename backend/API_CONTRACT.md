@@ -6,8 +6,8 @@ All endpoints are under `/api`. Errors return `{ "detail": "Description" }` with
 | --- | --- | --- |
 | `GET /api/meta` | None | `{ "domains": [{ "id": 1, "name": "tracker.example" }], "groups": [{ "id": 2, "name": "FORTESTS" }], "sources": [{ "id": 3, "name": "FORTESTS" }] }` |
 | `GET /api/offers?q=sample` | `q` matches a name substring or ID; blank returns first 50 active offers | `[{ "id": 3749, "name": "Sample offer" }]` |
-| `GET /api/campaigns?q=campaign` | Name substring or campaign ID | `[{ "id": 123, "name": "test_antipov_campaign1", "alias": "test-antipov-campaign1-a1b2c3d4", "url": "https://tracker.example/test-antipov-campaign1-a1b2c3d4" }]` |
-| `POST /api/campaigns` | `{ "name": "campaign1", "geo": "AU", "offer_id": 3749, "domain_id": 1, "group_id": 2, "source_id": 3 }` | Status 201; `{ "id": 123, "name": "test_antipov_campaign1", "alias": "test-antipov-campaign1-a1b2c3d4", "url": "https://tracker.example/test-antipov-campaign1-a1b2c3d4" }` |
+| `GET /api/campaigns?q=campaign` | Name substring or campaign ID | Campaigns with `id`, `name`, `alias`, and an admin editor `url` |
+| `POST /api/campaigns` | `{ "name": "campaign1", "geo": "AU", "offer_id": 18001, "domain_id": 1813, "group_id": 10332, "source_id": 836 }` | Status 201 with the same campaign fields |
 | `GET /api/campaigns/{campaign_id}/streams` | None | Campaign stream collection; see example below |
 | `POST /api/campaigns/{campaign_id}/sync` | None | Same collection; fetches remote state; rejects dirty drafts with 409 |
 | `POST /api/streams/{stream_id}/offers` | `{ "offer_id": 3749 }` | Updated stream draft |
@@ -40,4 +40,4 @@ Stream collection example:
 
 An empty default offer stream remains editable after a sync, including when its local archive is lost. A direct-redirect stream is not editable. Shares are integer percentages. Unpinned offers divide the remainder evenly; surplus percentage points are assigned in ascending offer-ID order. A removed offer stays in the local archive at 0%. `dirty` marks changes not yet published to Keitaro. Publishing an empty offer list disables the stream; adding or restoring offers re-enables it only if this editor disabled it. `sync` reconciles externally removed offers to the archive.
 
-The editor lists and accepts existing Keitaro campaigns. `GET /api/campaigns` uses the current Keitaro campaign domain where available, falls back to a locally stored domain for campaigns created by this application, and can return `url: null` when the domain is unknown. On create, the name is prefixed if needed. Before creating any remote resource, the backend checks `GET /admin_api/v1/streams_actions` for the `http` action key; missing key yields 422 and malformed metadata yields 502.
+The editor lists the API key owner's campaigns and reads upstream pages with `offset` and `limit`. The campaign `url` points to the admin editor at `/admin/#!/campaign.editor/<id>`, including for campaigns without a tracking domain. On create, the backend prefixes the name if needed, creates a disabled campaign, adds a `regular` redirect stream with a country filter and a `default` offer stream, then enables the campaign. Publishing sends the complete active offer list because the stand replaces the list on update.
